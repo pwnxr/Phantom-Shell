@@ -52,7 +52,7 @@ I decided to move away from memory manipulation and focus on legitimate kernel n
 1.  **Implant (`implant.c`):** The kernel module loaded on the victim machine.
     * Hooks `NF_INET_PRE_ROUTING` to sniff commands.
     * Hooks `NF_INET_LOCAL_OUT` & `NF_INET_POST_ROUTING` to inject responses.
-2.  **Client (`client.c`):** The C program run by the attacker.
+2.  **Client (`trigger.c`):** The C program run by the attacker.
     * Constructs raw ICMP packets.
     * Calculates checksums.
     * Parses the injected response.
@@ -80,8 +80,8 @@ sudo insmod implant.ko
 ### Attack (Attacker)
 Compile the C client & attack:
 ```bash
-gcc client.c -o client
-sudo ./client 192.168.1.6 "id"
+gcc trigger.c -o trigger
+sudo ./trigger 192.168.1.6 "id"
 ```
 
 
