@@ -1,7 +1,6 @@
 obj-m += implant.o
 
 KDIR := /lib/modules/$(shell uname -r)/build
-
 PWD := $(shell pwd)
 
 all:

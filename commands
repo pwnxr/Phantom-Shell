@@ -1,5 +1,0 @@
-sudo rmmod implant
-make clean
-
-make
-
